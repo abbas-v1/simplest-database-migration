@@ -20,6 +20,27 @@ To use this library, add the following dependency to your Maven `pom.xml`:
 </dependency>
 ```
 
+### Migration Script
+Place your migration and the corresponding rollback scripts in the resource directory.
+
+```
+consuming-project/
+├── src/
+│   └── main/
+│       ├── java/
+│       │   └── come/
+│       │       └── example/
+│       │           └── DatabaseMigrationConfig.java
+│       ├── resources/
+│       │   └── db.migrations/
+│       │       └── V0_1_1__migrate_rename_tables.sql
+│       │       └── V0_1_1__rollback_rename_tables.sql
+│       │       └── V0_2_7__migrate_change_column_type_in_table_x.sql
+│       │       └── V0_2_7__roolback_change_column_type_in_table_x.sql
+├── pom.xml
+
+```
+
 ### Integration with Spring
 If you are using Spring, you can configure the library as follows:
 
