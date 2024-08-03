@@ -21,7 +21,7 @@ To use this library, add the following dependency to your Maven `pom.xml`:
 ```
 
 ### Migration Script
-Place your migration and the corresponding rollback scripts in the resource directory.
+Place your migration and the corresponding rollback scripts in the resource directory of your project.
 
 ```
 consuming-project/
