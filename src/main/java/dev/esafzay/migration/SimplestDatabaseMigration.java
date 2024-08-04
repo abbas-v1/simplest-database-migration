@@ -38,16 +38,16 @@ public class SimplestDatabaseMigration {
 
         if (!unAppliedMigrations.isEmpty()) {
             for (MigrationLog migration : unAppliedMigrations) {
-                log.info("Migrate database change : {}", migration.getVersion());
-                applyMigration(migration.getVersion(), migration.getMigrate(), migration.getRollback());
+                log.info("Migrate database change : {}", migration.version());
+                applyMigration(migration.version(), migration.migrate(), migration.rollback());
             }
             log.info("Database migration is completed.");
 
         } else {
             MigrationLog rollback = getRollback(appliedMigrations, migrationFiles);
             if (rollback != null) {
-                log.info("Rollback database change : {}", rollback.getVersion());
-                applyMigration(rollback.getVersion(), rollback.getMigrate(), "");
+                log.info("Rollback database change : {}", rollback.version());
+                applyMigration(rollback.version(), rollback.migrate(), "");
                 log.info("Database rollback is completed.");
             }
         }
@@ -99,7 +99,7 @@ public class SimplestDatabaseMigration {
     }
 
     private List<MigrationLog> getUnAppliedMigrations(Map<String, MigrationLog> appliedMigrations,
-                                                      Map<String, String> migrationFiles) {
+                                                       Map<String, String> migrationFiles) {
         return migrationFiles.keySet().stream()
                 .filter(migrationFileName -> migrationFileName.contains(MIGRATE_KEYWORD))
                 .filter(migrationFileName -> !appliedMigrations.containsKey(migrationFileName))
@@ -116,7 +116,7 @@ public class SimplestDatabaseMigration {
             if (!migrationFiles.containsKey(appliedMigrationFileName)) {
                 String version = appliedMigrationFileName.replace(MIGRATE_KEYWORD, ROLLBACK_KEYWORD);
                 MigrationLog migrationLog = appliedMigrations.get(appliedMigrationFileName);
-                return new MigrationLog(version, migrationLog.getRollback(), "");
+                return new MigrationLog(version, migrationLog.rollback(), "");
             }
         }
 
@@ -150,4 +150,7 @@ public class SimplestDatabaseMigration {
         }
     }
 
+}
+
+record MigrationLog(String version, String migrate, String rollback) {
 }
