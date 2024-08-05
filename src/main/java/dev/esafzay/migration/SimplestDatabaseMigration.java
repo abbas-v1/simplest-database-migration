@@ -27,31 +27,36 @@ public class SimplestDatabaseMigration {
     private static final String ROLLBACK_KEYWORD = "__rollback_";
 
     public void migrate() throws IOException, SQLException {
+
         log.info("Run database migration/rollback if any...");
-
         Map<String, String> migrationFiles = getMigrationFiles();
-        Map<String, MigrationLog> appliedMigrations = getAppliedMigrations();
-        List<MigrationLog> unAppliedMigrations = getUnAppliedMigrations(appliedMigrations, migrationFiles);
 
-        if (!unAppliedMigrations.isEmpty()) {
-            for (MigrationLog migration : unAppliedMigrations) {
-                log.info("Migrate database change : {}", migration.version());
-                applyMigration(migration.version(), migration.migrate(), migration.rollback());
-            }
-            log.info("Database migration is completed.");
-        } else {
-            MigrationLog rollback = getRollback(appliedMigrations, migrationFiles);
-            if (rollback != null) {
-                log.info("Rollback database change : {}", rollback.version());
-                applyMigration(rollback.version(), rollback.migrate(), "");
-                log.info("Database rollback is completed.");
+        try (Connection connection = this.dataSource.getConnection()) {
+
+            Map<String, MigrationLog> appliedMigrations = getAppliedMigrations(connection);
+            List<MigrationLog> unAppliedMigrations = getUnAppliedMigrations(appliedMigrations, migrationFiles);
+
+            if (!unAppliedMigrations.isEmpty()) {
+                for (MigrationLog migration : unAppliedMigrations) {
+                    log.info("Migrate database change : {}", migration.version());
+                    applyMigration(connection, migration);
+                }
+                log.info("Database migration is completed.");
+
+            } else {
+                MigrationLog rollback = getRollback(appliedMigrations, migrationFiles);
+                if (rollback != null) {
+                    log.info("Rollback database change : {}", rollback.version());
+                    applyMigration(connection, rollback);
+                    log.info("Database rollback is completed.");
+                }
             }
         }
     }
 
     private Map<String, String> getMigrationFiles() throws IOException {
         Map<String, String> migrationFiles = new HashMap<>();
-        try (Stream<Path> files = Files.list(resourcePath)) {
+        try (Stream<Path> files = Files.list(this.resourcePath)) {
             files.filter(filePath -> filePath.toString().endsWith(".sql"))
                     .forEach(filePath -> {
                         try {
@@ -68,12 +73,11 @@ public class SimplestDatabaseMigration {
         return migrationFiles;
     }
 
-    private Map<String, MigrationLog> getAppliedMigrations() throws SQLException {
+    private Map<String, MigrationLog> getAppliedMigrations(Connection connection) throws SQLException {
         Map<String, MigrationLog> appliedMigrations = new HashMap<>();
         String sql = "SELECT version, migrate_sql, rollback_sql FROM database_migration_log ORDER BY id";
 
-        try (Connection connection = dataSource.getConnection();
-             Statement statement = connection.createStatement();
+        try (Statement statement = connection.createStatement();
              ResultSet resultSet = statement.executeQuery(sql)) {
 
             while (resultSet.next()) {
@@ -114,25 +118,25 @@ public class SimplestDatabaseMigration {
         return null;
     }
 
-    private void applyMigration(String version, String migrateSql, String rollbackSql) throws SQLException {
-        log.info(migrateSql);
+    private void applyMigration(Connection connection, MigrationLog migration) throws SQLException {
+        log.info(migration.migrate());
+        connection.setAutoCommit(false);
         String logSql = "INSERT INTO database_migration_log (version, migrate_sql, rollback_sql) VALUES(?, ?, ?)";
 
-        try (Connection connection = dataSource.getConnection()) {
-            connection.setAutoCommit(false);
-            try (Statement statement = connection.createStatement()) {
-                statement.execute(migrateSql);
-                try (PreparedStatement preparedStatement = connection.prepareStatement(logSql)) {
-                    preparedStatement.setString(1, version);
-                    preparedStatement.setString(2, migrateSql);
-                    preparedStatement.setString(3, rollbackSql);
-                    preparedStatement.executeUpdate();
-                }
-                connection.commit();
-            } catch (SQLException e) {
-                connection.rollback();
-                throw e;
+        try (Statement statement = connection.createStatement()) {
+            statement.execute(migration.migrate());
+
+            try (PreparedStatement preparedStatement = connection.prepareStatement(logSql)) {
+                preparedStatement.setString(1, migration.version());
+                preparedStatement.setString(2, migration.migrate());
+                preparedStatement.setString(3, migration.rollback());
+                preparedStatement.executeUpdate();
             }
+            connection.commit();
+
+        } catch (SQLException e) {
+            connection.rollback();
+            throw e;
         }
     }
 }
