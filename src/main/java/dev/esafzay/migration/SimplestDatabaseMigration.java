@@ -6,14 +6,9 @@ import org.slf4j.LoggerFactory;
 import javax.sql.DataSource;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
+import java.nio.file.*;
 import java.sql.*;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Objects;
+import java.util.*;
 import java.util.stream.Stream;
 
 public class SimplestDatabaseMigration {
@@ -21,9 +16,11 @@ public class SimplestDatabaseMigration {
     private static final Logger log = LoggerFactory.getLogger(SimplestDatabaseMigration.class);
 
     private final DataSource dataSource;
+    private final Path resourcePath;
 
-    public SimplestDatabaseMigration(DataSource dataSource) {
+    public SimplestDatabaseMigration(DataSource dataSource, Path resourcePath) {
         this.dataSource = dataSource;
+        this.resourcePath = resourcePath;
     }
 
     private static final String MIGRATE_KEYWORD = "__migrate_";
@@ -42,7 +39,6 @@ public class SimplestDatabaseMigration {
                 applyMigration(migration.version(), migration.migrate(), migration.rollback());
             }
             log.info("Database migration is completed.");
-
         } else {
             MigrationLog rollback = getRollback(appliedMigrations, migrationFiles);
             if (rollback != null) {
@@ -55,8 +51,7 @@ public class SimplestDatabaseMigration {
 
     private Map<String, String> getMigrationFiles() throws IOException {
         Map<String, String> migrationFiles = new HashMap<>();
-        String resourcePath = "/db/migration/";
-        try (Stream<Path> files = Files.list(Paths.get(Objects.requireNonNull(getClass().getResource(resourcePath)).toURI()))) {
+        try (Stream<Path> files = Files.list(resourcePath)) {
             files.filter(filePath -> filePath.toString().endsWith(".sql"))
                     .forEach(filePath -> {
                         try {
@@ -70,7 +65,6 @@ public class SimplestDatabaseMigration {
             log.error("Could not get database migration files", ex);
             throw new IOException("Could not get database migration files", ex);
         }
-
         return migrationFiles;
     }
 
@@ -84,7 +78,6 @@ public class SimplestDatabaseMigration {
 
             while (resultSet.next()) {
                 String version = resultSet.getString("version");
-
                 if (version.contains(ROLLBACK_KEYWORD)) {
                     appliedMigrations.remove(version.replace(ROLLBACK_KEYWORD, MIGRATE_KEYWORD));
                 } else {
@@ -94,12 +87,11 @@ public class SimplestDatabaseMigration {
                 }
             }
         }
-
         return appliedMigrations;
     }
 
     private List<MigrationLog> getUnAppliedMigrations(Map<String, MigrationLog> appliedMigrations,
-                                                       Map<String, String> migrationFiles) {
+                                                      Map<String, String> migrationFiles) {
         return migrationFiles.keySet().stream()
                 .filter(migrationFileName -> migrationFileName.contains(MIGRATE_KEYWORD))
                 .filter(migrationFileName -> !appliedMigrations.containsKey(migrationFileName))
@@ -119,7 +111,6 @@ public class SimplestDatabaseMigration {
                 return new MigrationLog(version, migrationLog.rollback(), "");
             }
         }
-
         return null;
     }
 
@@ -129,19 +120,14 @@ public class SimplestDatabaseMigration {
 
         try (Connection connection = dataSource.getConnection()) {
             connection.setAutoCommit(false);
-
             try (Statement statement = connection.createStatement()) {
-                // Execute the migration script
                 statement.execute(migrateSql);
-
                 try (PreparedStatement preparedStatement = connection.prepareStatement(logSql)) {
-                    // Insert migration details into the log
                     preparedStatement.setString(1, version);
                     preparedStatement.setString(2, migrateSql);
                     preparedStatement.setString(3, rollbackSql);
                     preparedStatement.executeUpdate();
                 }
-
                 connection.commit();
             } catch (SQLException e) {
                 connection.rollback();
@@ -149,7 +135,6 @@ public class SimplestDatabaseMigration {
             }
         }
     }
-
 }
 
 record MigrationLog(String version, String migrate, String rollback) {
