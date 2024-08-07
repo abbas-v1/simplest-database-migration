@@ -33,8 +33,13 @@ public class SimplestDatabaseMigration {
     private static final String MIGRATE_KEYWORD = "__migrate_";
     private static final String ROLLBACK_KEYWORD = "__rollback_";
 
+    /**
+     * Apply the newly created migrations scripts in the resource directory or rollback the scripts that were previously
+     * stored in the database.
+     * @throws IOException if migration files are not read from the resource directory
+     * @throws SQLException if previous migrations were not read from the database, or new ones were not applied.
+     */
     public void migrate() throws IOException, SQLException {
-
         log.info("Run database migration/rollback if any...");
         Map<String, String> migrationFiles = getMigrationFiles();
 
