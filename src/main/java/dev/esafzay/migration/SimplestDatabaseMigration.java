@@ -140,6 +140,3 @@ public class SimplestDatabaseMigration {
         }
     }
 }
-
-record MigrationLog(String version, String migrate, String rollback) {
-}
