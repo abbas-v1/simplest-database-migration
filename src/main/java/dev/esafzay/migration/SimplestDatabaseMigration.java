@@ -4,21 +4,28 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import javax.sql.DataSource;
+import java.io.File;
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.*;
+import java.net.URISyntaxException;
+import java.net.URL;
 import java.sql.*;
 import java.util.*;
-import java.util.stream.Stream;
+import java.io.BufferedReader;
+import java.io.FileReader;
 
 public class SimplestDatabaseMigration {
 
     private static final Logger log = LoggerFactory.getLogger(SimplestDatabaseMigration.class);
 
     private final DataSource dataSource;
-    private final Path resourcePath;
+    private final String resourcePath;
 
-    public SimplestDatabaseMigration(DataSource dataSource, Path resourcePath) {
+    /**
+     * Creates a new SimplestDatabaseMigration instance
+     * @param dataSource The dataSource to be used for getting the database connection
+     * @param resourcePath The directory in src/main/resources that contains the migrations scripts
+     */
+    public SimplestDatabaseMigration(DataSource dataSource, String resourcePath) {
         this.dataSource = dataSource;
         this.resourcePath = resourcePath;
     }
@@ -54,26 +61,54 @@ public class SimplestDatabaseMigration {
         }
     }
 
-    private Map<String, String> getMigrationFiles() throws IOException {
-        Map<String, String> migrationFiles = new HashMap<>();
-        try (Stream<Path> files = Files.list(this.resourcePath)) {
-            files.filter(filePath -> filePath.toString().endsWith(".sql"))
-                    .forEach(filePath -> {
-                        try {
-                            String sqlScript = Files.readString(filePath, StandardCharsets.UTF_8);
-                            migrationFiles.put(filePath.getFileName().toString(), sqlScript);
-                        } catch (IOException e) {
-                            log.error("Could not read SQL script file: {}", filePath, e);
-                        }
-                    });
-        } catch (Exception ex) {
+    Map<String, String> getMigrationFiles() throws IOException {
+        URL resourceUrl = getClass().getClassLoader().getResource(resourcePath);
+        if (resourceUrl == null) {
+            log.error("Migrations directory not found : {}", resourcePath);
+            throw new IllegalStateException("Migrations directory not found : " + resourcePath);
+        }
+
+        File resourceDir = null;
+        try {
+            resourceDir = new File(resourceUrl.toURI());
+        } catch (URISyntaxException ex) {
             log.error("Could not get database migration files", ex);
             throw new IOException("Could not get database migration files", ex);
+        }
+
+        File[] files = resourceDir.listFiles();
+        if (files == null || files.length == 0) {
+            log.info("No migration files found");
+            return Map.of();
+        }
+
+        Map<String, String> migrationFiles = new HashMap<>();
+        for (var file : files) {
+            if (file.getName().endsWith(".sql")) {
+                String sqlScript = readFileContent(file);
+                migrationFiles.put(file.getName(), sqlScript);
+            }
         }
         return migrationFiles;
     }
 
-    private Map<String, MigrationLog> getAppliedMigrations(Connection connection) throws SQLException {
+    String readFileContent(File file) {
+        StringBuilder content = new StringBuilder();
+
+        try (BufferedReader reader = new BufferedReader(new FileReader(file))) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                content.append(line).append(System.lineSeparator());
+            }
+        } catch (IOException ex) {
+            log.error("Failed to read contents of the file", ex);
+            return null;
+        }
+
+        return content.toString();
+    }
+
+    Map<String, MigrationLog> getAppliedMigrations(Connection connection) throws SQLException {
         Map<String, MigrationLog> appliedMigrations = new HashMap<>();
         String sql = "SELECT version, migrate_sql, rollback_sql FROM database_migration_log ORDER BY id";
 
@@ -94,8 +129,7 @@ public class SimplestDatabaseMigration {
         return appliedMigrations;
     }
 
-    private List<MigrationLog> getUnAppliedMigrations(Map<String, MigrationLog> appliedMigrations,
-                                                      Map<String, String> migrationFiles) {
+    List<MigrationLog> getUnAppliedMigrations(Map<String, MigrationLog> appliedMigrations, Map<String, String> migrationFiles) {
         return migrationFiles.keySet().stream()
                 .filter(migrationFileName -> migrationFileName.contains(MIGRATE_KEYWORD))
                 .filter(migrationFileName -> !appliedMigrations.containsKey(migrationFileName))
@@ -107,7 +141,7 @@ public class SimplestDatabaseMigration {
                 }).toList();
     }
 
-    private MigrationLog getRollback(Map<String, MigrationLog> appliedMigrations, Map<String, String> migrationFiles) {
+    MigrationLog getRollback(Map<String, MigrationLog> appliedMigrations, Map<String, String> migrationFiles) {
         for (String appliedMigrationFileName : appliedMigrations.keySet()) {
             if (!migrationFiles.containsKey(appliedMigrationFileName)) {
                 String version = appliedMigrationFileName.replace(MIGRATE_KEYWORD, ROLLBACK_KEYWORD);
@@ -118,7 +152,7 @@ public class SimplestDatabaseMigration {
         return null;
     }
 
-    private void applyMigration(Connection connection, MigrationLog migration) throws SQLException {
+    void applyMigration(Connection connection, MigrationLog migration) throws SQLException {
         log.info(migration.migrate());
         connection.setAutoCommit(false);
         String logSql = "INSERT INTO database_migration_log (version, migrate_sql, rollback_sql) VALUES(?, ?, ?)";
