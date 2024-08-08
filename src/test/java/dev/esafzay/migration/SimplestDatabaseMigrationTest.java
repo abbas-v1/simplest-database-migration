@@ -10,6 +10,8 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import javax.sql.DataSource;
 import java.nio.file.*;
 import java.sql.*;
+
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
@@ -73,6 +75,22 @@ class SimplestDatabaseMigrationTest {
     }
 
     @Test
+    void testMigrate_OneMigrationsFailedOnFirstStatement_NoRollbacks() throws Exception {
+        var resourcePath = "migrations/one-migrations";
+        var simplestDatabaseMigration = new SimplestDatabaseMigration(dataSource, resourcePath);
+        when(resultSet.next()).thenReturn(false);
+        when(statement2.execute(anyString())).thenThrow(new SQLException("Random exception occurred"));
+
+        assertThrows(SQLException.class, simplestDatabaseMigration::migrate);
+
+        verify(connection).setAutoCommit(false);
+        verify(statement2).execute("CREATE TABLE test (id INT);");
+        verify(preparedStatement, never()).executeUpdate();
+        verify(connection).rollback();
+        verify(connection, never()).commit();
+    }
+
+    @Test
     void testMigrate_TwoMigrations_NoRollbacks() throws Exception {
         var resourcePath = "migrations/two-migrations";
         var simplestDatabaseMigration = new SimplestDatabaseMigration(dataSource, resourcePath);
@@ -88,6 +106,24 @@ class SimplestDatabaseMigrationTest {
         verify(preparedStatement).setString(3, "DROP TABLE another;");
         verify(preparedStatement, times(2)).executeUpdate();
         verify(connection, times(2)).commit();
+    }
+
+    @Test
+    void testMigrate_TwoMigrationsFailedOnSecondStatement_NoRollbacks() throws Exception {
+        var resourcePath = "migrations/two-migrations";
+        var simplestDatabaseMigration = new SimplestDatabaseMigration(dataSource, resourcePath);
+        when(resultSet.next()).thenReturn(false);
+        when(connection.prepareStatement(anyString())).thenReturn(preparedStatement);
+        when(preparedStatement.executeUpdate()).thenThrow(new SQLTimeoutException());
+
+        assertThrows(SQLException.class, simplestDatabaseMigration::migrate);
+
+        verify(connection, times(1)).setAutoCommit(false);
+//      TODO  verify(statement2).execute("CREATE TABLE another (id INT);");
+        verify(statement2).execute(anyString());
+        verify(preparedStatement, times(1)).executeUpdate();
+        verify(connection).rollback();
+        verify(connection, never()).commit();
     }
 
 }
