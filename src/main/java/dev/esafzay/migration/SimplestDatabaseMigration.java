@@ -48,7 +48,7 @@ public class SimplestDatabaseMigration {
             Map<String, MigrationLog> appliedMigrations = getAppliedMigrations(connection);
             List<MigrationLog> unAppliedMigrations = getUnAppliedMigrations(appliedMigrations, migrationFiles);
 
-            if (!unAppliedMigrations.isEmpty()) {
+            if (!unAppliedMigrations.isEmpty()) { // migrate flow
                 for (MigrationLog migration : unAppliedMigrations) {
                     log.info("Migrate database change : {}", migration.version());
                     applyMigration(connection, migration);
@@ -57,7 +57,7 @@ public class SimplestDatabaseMigration {
 
             } else {
                 MigrationLog rollback = getRollback(appliedMigrations, migrationFiles);
-                if (rollback != null) {
+                if (rollback != null) { // rollback flow
                     log.info("Rollback database change : {}", rollback.version());
                     applyMigration(connection, rollback);
                     log.info("Database rollback is completed.");
@@ -90,7 +90,7 @@ public class SimplestDatabaseMigration {
         Map<String, String> migrationFiles = new HashMap<>();
         for (var file : files) {
             if (file.getName().endsWith(".sql")) {
-                String sqlScript = readFileContent(file);
+                String sqlScript = readFileContent(file).trim();
                 migrationFiles.put(file.getName(), sqlScript);
             }
         }
