@@ -1,0 +1,2 @@
+ALTER TABLE another
+ADD COLUMN age INT;

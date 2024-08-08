@@ -1,0 +1,2 @@
+ALTER TABLE another
+DROP COLUMN age;
